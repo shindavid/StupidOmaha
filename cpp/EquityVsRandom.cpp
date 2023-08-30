@@ -100,4 +100,5 @@ int main(int argc, char** argv) {
   }
 
   fclose(fp);
+  std::cout << std::endl << "done" << std::endl;
 }
