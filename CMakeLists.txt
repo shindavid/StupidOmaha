@@ -11,10 +11,10 @@ set(POKERSTOVE_DIR "/home/dshin/checkouts/pokerstove")
 
 # Find the Torch package
 find_package(Torch REQUIRED PATHS ${TORCH_DIR})
-find_package(Boost COMPONENTS program_options filesystem  REQUIRED)
+find_package(Boost COMPONENTS program_options filesystem REQUIRED)
 
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-array-bounds -O3 ${TORCH_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-array-bounds ${TORCH_CXX_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -flto")
 
 include_directories("cpp")
@@ -27,11 +27,19 @@ link_directories(${Boost_LIBRARY_DIRS})
 
 # Add your source files
 add_executable(equity-vs-random cpp/EquityVsRandom.cpp)
+add_executable(sim cpp/Sim.cpp)
 
-# Link against the Torch libraries and pokerstove library
-target_link_libraries(equity-vs-random ${Boost_LIBRARIES} ${TORCH_LIBRARIES} penum peval)
+set(executables equity-vs-random sim)
 
-# Set the output directory
-set_target_properties(equity-vs-random PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
-)
+foreach(tgt ${executables})
+    # Link against the Torch libraries and pokerstove library
+    target_link_libraries(${tgt} ${Boost_LIBRARIES} ${TORCH_LIBRARIES} penum peval)
+
+    # Set the output directory
+    set_target_properties(${tgt} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+    )
+
+    # Set optimization level for Release builds
+    target_compile_options(${tgt} PRIVATE $<$<CONFIG:Release>:-O3>)
+endforeach()
