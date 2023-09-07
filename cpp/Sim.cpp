@@ -30,14 +30,13 @@ int main(int argc, char** argv) {
 
   desc.add_options()("help,?", "produce help message")(
       "hands,h", po::value<int>()->default_value(10000), "number of hands")(
-      "runs,r", po::value<int>()->default_value(100),
-      "number of boards to run")(
+      "runs,r", po::value<int>()->default_value(100), "number of boards to run")(
       "players,p", po::value<int>()->default_value(6), "number of players")(
       "batch-size,b", po::value<int>()->default_value(128), "batch size")(
       "network-file,f", po::value<std::string>()->default_value(""), "path of neural network")(
-      "cuda-device,c", po::value<std::string>()->default_value("cuda:0"),
-      "cuda device")("output-dir,o", po::value<std::string>(),
-                     "output directory");
+      "cuda-device,c", po::value<std::string>()->default_value("cuda:0"), "cuda device")(
+      "kill-file,k", po::value<std::string>(), "kill file")(
+      "output-dir,o", po::value<std::string>(), "output directory");
 
   po::variables_map vm;
   po::store(po::command_line_parser(argc, argv)

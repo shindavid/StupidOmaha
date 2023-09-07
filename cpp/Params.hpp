@@ -12,6 +12,7 @@ struct Params {
     network_file = vm["network-file"].as<std::string>();
     cuda_device = vm["cuda-device"].as<std::string>();
     output_dir = vm["output-dir"].as<std::string>();
+    kill_file = vm["kill-file"].as<std::string>();
   }
 
   bool empty_net() const { return network_file.empty(); }
@@ -23,4 +24,5 @@ struct Params {
   std::string network_file;
   std::string cuda_device;
   std::string output_dir;
+  std::string kill_file;
 };

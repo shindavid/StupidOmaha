@@ -82,6 +82,7 @@ class SharedData {
     return x;
   }
 
+  const Params& params() const { return params_; }
   int n_hands() const { return params_.n_hands; }
   int n_runs() const { return params_.n_runs; }
   int n_players() const { return params_.n_players; }

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <boost/filesystem.hpp>
 #include <GameThread.hpp>
 #include <Params.hpp>
 #include <SharedData.hpp>
+#include <boost/filesystem.hpp>
 
 class Manager {
  public:
@@ -22,11 +22,22 @@ class Manager {
   int batch_size() const { return shared_data_.batch_size(); }
 
   void run() {
+    bool check_kill_file = !shared_data_.params().kill_file.empty();
+    boost::filesystem::path kill_file(shared_data_.params().kill_file);
+
     int remaining_hands = n_hands();
-    while (remaining_hands > 0) {
+    bool infinite = remaining_hands == 0;
+    while (infinite || remaining_hands > 0) {
       remaining_hands -= batch_size();
       for (GameThread* thread : game_threads_) {
         thread->launch();
+      }
+
+      if (check_kill_file) {
+        // break if kill_file exists:
+        if (boost::filesystem::exists(kill_file)) {
+          break;
+        }
       }
     }
 
