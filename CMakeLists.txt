@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.17)
 project(StupidOmaha)
+set(CMAKE_DEBUG_POSTFIX d)
 
 if (NOT CMAKE_BUILD_TYPE MATCHES Debug)
     add_definitions(-DNDEBUG)
@@ -39,6 +40,7 @@ foreach(tgt ${executables})
     set_target_properties(${tgt} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
     )
+    set_target_properties(${tgt} PROPERTIES DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
 
     # Set optimization level for Release builds
     target_compile_options(${tgt} PRIVATE $<$<CONFIG:Release>:-O3>)
