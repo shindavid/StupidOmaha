@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
       "batch-size,b", po::value<int>()->default_value(128), "batch size")(
       "network-file,f", po::value<std::string>()->default_value(""), "path of neural network")(
       "cuda-device,c", po::value<std::string>()->default_value("cuda:0"), "cuda device")(
-      "kill-file,k", po::value<std::string>(), "kill file")(
+      "kill-file,k", po::value<std::string>()->default_value(""), "kill file")(
       "output-dir,o", po::value<std::string>(), "output directory");
 
   po::variables_map vm;

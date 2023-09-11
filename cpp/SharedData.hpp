@@ -15,13 +15,14 @@ class SharedData {
   SharedData(const Params& params) : params_(params) {
     if (params.empty_net()) return;
 
-    module_ = new torch::jit::script::Module(params.network_file);
-    module_->to(at::Device(params.cuda_device));
+    std::cout << "Loading network from " << params.network_file << std::endl;
+    module_ = torch::jit::load("/media/dshin/stupidomaha/v1/models/gen-1.ptj");
+    module_.to(at::Device(params.cuda_device));
 
     for (int i = 0; i < batch_size(); ++i) {
-      inputs_.push_back(torch::empty({input_size()}, torch::kUInt8));
+      inputs_.push_back(torch::empty({input_size()}, torch::kFloat32));
     }
-    input_gpu_ = torch::empty({batch_size(), input_size()}, torch::kUInt8)
+    input_gpu_ = torch::empty({batch_size(), input_size()}, torch::kFloat32)
                      .to(at::Device(params.cuda_device));
     output_ = torch::empty({batch_size(), 1}, torch::kFloat32);
     input_vec_.push_back(input_gpu_);
@@ -37,7 +38,16 @@ class SharedData {
       thread_->join();
       delete thread_;
     }
-    delete module_;
+  }
+
+  void join() {
+    closed_ = true;
+    loop_cv_.notify_one();
+    if (thread_) {
+      thread_->join();
+      delete thread_;
+      thread_ = nullptr;
+    }
   }
 
   void encode(torch::Tensor& tensor, int seat, pokerstove::CardSet cards,
@@ -102,13 +112,12 @@ class SharedData {
       if (closed_) return;
 
       copy_input_to_gpu();
-      auto out = module_->forward(input_vec_).toTensor();
+      auto out = module_.forward(input_vec_).toTuple()->elements()[0].toTensor();
       output_.copy_(out.detach());
 
       prepare_for_reads();
       loop_cv_.wait(lock,
                     [&] { return read_count_ == batch_size() || closed_; });
-      if (closed_) return;
     }
   }
 
@@ -136,7 +145,7 @@ class SharedData {
   }
 
   const Params params_;
-  torch::jit::script::Module* module_ = nullptr;
+  torch::jit::script::Module module_;
   input_vec_t input_vec_;
   torch::Tensor input_gpu_;
   std::vector<torch::Tensor> inputs_;

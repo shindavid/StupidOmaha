@@ -24,13 +24,73 @@ class GameThread {
     }
   }
 
+  ~GameThread() {
+    if (thread_) {
+      thread_->join();
+      delete thread_;
+    }
+  }
+
   int n_players() const { return shared_data_->n_players(); }
   int n_runs() const { return shared_data_->n_runs(); }
   int batch_size() const { return shared_data_->batch_size(); }
   int n_acting_players() const { return shared_data_->n_acting_players(); }
   int input_size() const { return shared_data_->input_size(); }
 
+  int n_training_rows() const { return n_rows_; }
+
   void launch() {
+    thread_ = new std::thread([&] { run(); });
+  }
+
+  void join() {
+    if (thread_) {
+      thread_->join();
+      delete thread_;
+      thread_ = nullptr;
+    }
+  }
+
+  void flush() {
+    // combine all training_data inputs into one tensor
+    torch::Tensor input = torch::empty({n_rows_, input_size()}, torch::kUInt8);
+    torch::Tensor output = torch::empty({n_rows_, 1}, torch::kFloat32);
+    int row = 0;
+    for (const training_row_t& training_row : training_data_) {
+      input.index_put_({row}, training_row.input);
+      output[row][0] = training_row.output;
+      ++row;
+    }
+
+    // output filename is output_dir/<thread_id>.pt
+    std::stringstream ss;
+    ss << shared_data_->output_dir() << "/" << thread_id_ << "-" << n_rows_
+       << ".pt";
+    std::string output_filename = ss.str();
+
+    using tensor_map_t = std::map<std::string, torch::Tensor>;
+    tensor_map_t tensor_map;
+    tensor_map["input"] = input;
+    tensor_map["output"] = output;
+
+    torch::serialize::OutputArchive archive(
+        std::make_shared<torch::jit::CompilationUnit>());
+    for (auto it : tensor_map) {
+      archive.write(it.first, it.second);
+    }
+
+    archive.save_to(output_filename);
+    std::cout << "Wrote to: " << output_filename << std::endl;
+  }
+
+ private:
+  struct training_row_t {
+    torch::Tensor input;
+    double output;
+  };
+  using training_row_list_t = std::list<training_row_t>;
+
+  void run() {
     init_hand();
 
     for (int seat = 0; seat < n_acting_players(); ++seat) {
@@ -58,54 +118,13 @@ class GameThread {
     }
   }
 
-  void flush() {
-    // combine all training_data inputs into one tensor
-    int n_rows = training_data_.size();
-    torch::Tensor input =
-        torch::empty({n_rows, input_size()}, torch::kUInt8);
-    torch::Tensor output = torch::empty({n_rows, 1}, torch::kFloat32);
-    int row = 0;
-    for (const training_row_t& training_row : training_data_) {
-      input.index_put_({row}, training_row.input);
-      // input[row] = training_row.input;
-      // input.index_put_({row}, training_row.input);
-      output[row][0] = training_row.output;
-      ++row;
-    }
-
-    // output filename is output_dir/<thread_id>.pt
-    std::stringstream ss;
-    ss << shared_data_->output_dir() << "/" << thread_id_ << ".pt";
-    std::string output_filename = ss.str();
-
-    using tensor_map_t = std::map<std::string, torch::Tensor>;
-    tensor_map_t tensor_map;
-    tensor_map["input"] = input;
-    tensor_map["output"] = output;
-
-    torch::serialize::OutputArchive archive(
-        std::make_shared<torch::jit::CompilationUnit>());
-    for (auto it : tensor_map) {
-      archive.write(it.first, it.second);
-    }
-
-    archive.save_to(output_filename);
-    std::cout << "Wrote to: " << output_filename << std::endl;
-  }
-
- private:
-  struct training_row_t {
-    torch::Tensor input;
-    double output;
-  };
-  using training_row_list_t = std::list<training_row_t>;
-
   void record_training_data(pokerstove::CardSet hand, int seat,
                             const std::vector<bool>& callers, double ev) {
     torch::Tensor tensor = torch::empty({input_size()}, torch::kUInt8);
     shared_data_->encode(tensor, seat, hand, callers);
 
     training_data_.push_back(training_row_t{tensor, ev});
+    n_rows_++;
   }
 
   void init_hand() {
@@ -180,5 +199,7 @@ class GameThread {
   std::vector<bool> callers_;
   std::vector<pokerstove::CardDistribution> hand_dists_;
 
+  std::thread* thread_ = nullptr;
   training_row_list_t training_data_;
+  int n_rows_ = 0;
 };

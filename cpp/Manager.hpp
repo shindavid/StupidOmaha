@@ -32,6 +32,9 @@ class Manager {
       for (GameThread* thread : game_threads_) {
         thread->launch();
       }
+      for (GameThread* thread : game_threads_) {
+        thread->join();
+      }
 
       if (check_kill_file) {
         // break if kill_file exists:
@@ -41,9 +44,15 @@ class Manager {
       }
     }
 
+    int n_training_rows = 0;
+
+    shared_data_.join();
     for (GameThread* thread : game_threads_) {
       thread->flush();
+      n_training_rows += thread->n_training_rows();
     }
+
+    std::cout << "RESULT n_training_rows: " << n_training_rows << std::endl;
   }
 
  private:
