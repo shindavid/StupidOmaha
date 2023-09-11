@@ -44,7 +44,7 @@ def build_project(build_dir: Path, build_type: str):
   print('')
   for binary in binaries:
     if binary.name in candidates:
-      print(binary.relative_to(build_dir.parent))
+      print(binary.relative_to(build_dir.parent.parent))
 
 
 def main():
