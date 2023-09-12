@@ -32,7 +32,7 @@ def card_repr(k):
 
 
 def input_repr(row):
-    card_indices = list(torch.where(row[:NUM_CARDS])[0])
+    card_indices = [int(x) for x in torch.where(row[:NUM_CARDS])[0]]
     assert len(card_indices) == 4
     card_indices.sort(key=lambda c: (-(c % 13), c // 13))
     cards_repr = ''.join(card_repr(c) for c in card_indices)
@@ -255,14 +255,16 @@ class SelfPlayProcData:
 
         # Calculate spacing for super columns
         spacing_per_regular_col = SelfPlayProcData.column_width()
-        super_col1_width = spacing_per_regular_col + len(regular_columns[1])
-        super_col2_width = spacing_per_regular_col + len(regular_columns[3])
-        super_col0_width = 5 * spacing_per_regular_col - super_col1_width - super_col2_width
+        super_col0_width = 2 * spacing_per_regular_col - len(regular_columns[1])
+        super_col3_width = spacing_per_regular_col + len(regular_columns[3])
+        super_col2_width = spacing_per_regular_col - len(regular_columns[3])
+        super_col1_width = 5 * spacing_per_regular_col - super_col0_width - super_col2_width - super_col3_width
 
         # Print super columns
         print("".center(super_col0_width), end="")
         print(super_columns[0].center(super_col1_width), end="")
-        print(super_columns[1].center(super_col2_width), end="")
+        print("".center(super_col2_width), end="")
+        print(super_columns[1].center(super_col3_width), end="")
         print()  # Newline at the end
 
         # Print regular columns
@@ -445,7 +447,7 @@ class Manager:
                         f'{n_total_positions} total positions{suffix}')
 
             stats = TrainingStats(net)
-            print_count = 0  # set to positive number to see print of example hands
+            print_count = 5  # set to positive number to see print of example hands
             for data in loader:
                 t1 = time.time()
                 inputs = data[0]
