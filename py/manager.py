@@ -6,7 +6,7 @@ import sys
 import tempfile
 import time
 import torch
-from torch.optim import Optimizer, SGD
+from torch.optim import Optimizer, SGD, Adam
 from torch.utils.data import DataLoader
 from typing import Callable, List, Optional, Tuple
 
@@ -19,6 +19,33 @@ from tensor_dataset import TensorDataset
 Generation = int
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+
+RANKS = '23456789TJQKA'
+SUITS = 'cdhs'
+NUM_CARDS = 52
+NUM_PLAYERS = 6
+
+
+def card_repr(k):
+    return RANKS[k % 13] + SUITS[k // 13]
+
+
+def input_repr(row):
+    card_indices = list(torch.where(row[:NUM_CARDS])[0])
+    assert len(card_indices) == 4
+    card_indices.sort(key=lambda c: (-(c % 13), c // 13))
+    cards_repr = ''.join(card_repr(c) for c in card_indices)
+    pos_indices = row[NUM_CARDS: NUM_CARDS + NUM_PLAYERS - 1]
+    call_indices = row[NUM_CARDS + NUM_PLAYERS - 1:]
+
+    action_str = ['_' for _ in range(NUM_PLAYERS)]
+    action_str[-1] = 'B'
+    for k in range(NUM_PLAYERS - 1):
+        if pos_indices[k]:
+            break
+        action_str[k] = 'C' if call_indices[k] else 'F'
+    return cards_repr + ' ' + ''.join(action_str)
 
 
 def apply_mask(tensor: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
@@ -370,7 +397,8 @@ class Manager:
         learning_rate = ModelingArgs.learning_rate
         momentum = ModelingArgs.momentum
         weight_decay = ModelingArgs.weight_decay
-        self.opt = SGD(self.net.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay)
+        self.opt = Adam(self.net.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        # self.opt = SGD(self.net.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay)
 
         # TODO: SWA, cyclic learning rate
 
@@ -417,6 +445,7 @@ class Manager:
                         f'{n_total_positions} total positions{suffix}')
 
             stats = TrainingStats(net)
+            print_count = 0  # set to positive number to see print of example hands
             for data in loader:
                 t1 = time.time()
                 inputs = data[0]
@@ -446,6 +475,13 @@ class Manager:
                                 zip(labels_list, outputs_list, loss_list)]
 
                 stats.update(results_list)
+
+                if print_count:
+                    i = inputs[0]
+                    o = labels_list[0][0]
+                    p = outputs_list[0][0]
+                    print('%s %+6.3f %+6.3f' % (input_repr(i), o, p))
+                    print_count -= 1
 
                 loss.backward()
                 optimizer.step()
