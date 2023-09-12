@@ -135,7 +135,7 @@ class GameThread {
       if (verbose) {
         std::string action_str = get_action_str(seat);
         sprintf(buf, "%d %s %+5.3f %+5.3f %s %c", seat,
-                hands_[seat].str().c_str(), predicted_ev, counterfactual_ev,
+                hands_[seat].str().c_str(), counterfactual_ev, predicted_ev,
                 action_str.c_str(), call ? 'C' : 'F');
         log.push_back(buf);
       }

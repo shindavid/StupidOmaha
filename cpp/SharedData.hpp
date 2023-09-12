@@ -16,7 +16,7 @@ class SharedData {
     if (params.empty_net()) return;
 
     std::cout << "Loading network from " << params.network_file << std::endl;
-    module_ = torch::jit::load("/media/dshin/stupidomaha/v1/models/gen-1.ptj");
+    module_ = torch::jit::load(params.network_file.c_str());
     module_.to(at::Device(params.cuda_device));
 
     for (int i = 0; i < batch_size(); ++i) {
