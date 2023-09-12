@@ -92,8 +92,10 @@ class NeuralNet(nn.Module):
 
     def forward(self, x):
         x = self.first_layer(x)
+        x = F.relu(x)
         for layer in self.layers:
             x = layer(x)
+            x = F.relu(x)
         return tuple(head(x) for head in self.heads)
 
     @classmethod
