@@ -36,7 +36,8 @@ int main(int argc, char** argv) {
       "network-file,f", po::value<std::string>()->default_value(""), "path of neural network")(
       "cuda-device,c", po::value<std::string>()->default_value("cuda:0"), "cuda device")(
       "kill-file,k", po::value<std::string>()->default_value(""), "kill file")(
-      "output-dir,o", po::value<std::string>(), "output directory");
+      "output-dir,o", po::value<std::string>(), "output directory")(
+      "verbose,v", po::bool_switch()->default_value(false), "verbose");
 
   po::variables_map vm;
   po::store(po::command_line_parser(argc, argv)

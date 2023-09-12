@@ -1,3 +1,4 @@
+from collections import defaultdict
 from natsort import natsorted
 import os
 import shutil
@@ -153,19 +154,23 @@ class SelfPlayProcData:
         timed_print(f'Running gen-{gen} self-play [{self.proc.pid}]: {" ".join(cmd)}')
 
         if gen == 0:
-            self.wait_for_completion()
+            results = self.wait_for_completion()
+            SelfPlayProcData.print_results(results)
 
     def terminate(self, timeout: Optional[int] = None, finalize_games_dir=True,
-                  expected_return_code: Optional[int] = 0):
+                  expected_return_code: Optional[int] = 0, print_results=True):
         if self.proc_complete:
             return
         kill_file = os.path.join(self.games_dir, 'kill.txt')
         os.system(f'touch {kill_file}')  # signals c++ process to stop
-        self.wait_for_completion(timeout=timeout, finalize_games_dir=finalize_games_dir,
-                                 expected_return_code=expected_return_code)
+        results = self.wait_for_completion(
+            timeout=timeout, finalize_games_dir=finalize_games_dir,
+            expected_return_code=expected_return_code)
+        if print_results:
+            SelfPlayProcData.print_results(results)
 
     def wait_for_completion(self, timeout: Optional[int] = None, finalize_games_dir=True,
-                            expected_return_code: Optional[int] = 0):
+                            expected_return_code: Optional[int] = 0) -> SelfPlayResults:
         timed_print(f'Waiting for self-play proc [{self.proc.pid}] to complete...')
         stdout = subprocess_util.wait_for(self.proc, timeout=timeout, expected_return_code=expected_return_code)
         results = SelfPlayResults(stdout)
@@ -173,6 +178,70 @@ class SelfPlayProcData:
             Manager.finalize_games_dir(self.games_dir, results)
         timed_print(f'Completed gen-{self.gen} self-play [{self.proc.pid}]')
         self.proc_complete = True
+        return results
+
+    @staticmethod
+    def print_results(results: SelfPlayResults):
+        call_counts = defaultdict(lambda: defaultdict(int))
+        total_counts = defaultdict(lambda: defaultdict(int))
+        for key, value in results.mappings.items():
+            tokens = key.split('-')
+            if tokens[0] not in ('call', 'fold'):
+                continue
+            seat = int(tokens[1])
+            num_prev_calls = int(tokens[2])
+            if num_prev_calls > 1:
+                continue
+            opening = 1 if (num_prev_calls == 0) else 0
+            total_counts[seat][opening] += int(value)
+            if tokens[0] == 'call':
+                call_counts[seat][opening] += int(value)
+
+        SelfPlayProcData.print_header()
+        for seat in range(5):
+            open_num = call_counts[seat][1]
+            open_den = total_counts[seat][1]
+            post_num = call_counts[seat][0]
+            post_den = total_counts[seat][0]
+
+            open_pct = open_num / open_den if open_den else None
+            post_pct = post_num / post_den if post_den else None
+            cols = [
+                str(seat),
+                '%2.f%%' % (100 * open_pct) if open_pct is not None else '',
+                '%2.f%%' % (100 * post_pct) if post_pct is not None else '',
+                '%6d' % open_den if open_den else '',
+                '%6d' % post_den if post_den else '',
+                ]
+            for col in cols:
+                print(f"{col:>{SelfPlayProcData.column_width()}}", end="")
+            print()  # Newline at the end
+
+    @staticmethod
+    def column_width():
+        return 12
+
+    @staticmethod
+    def print_header():
+        super_columns = ["%", "N"]
+        regular_columns = ["Seat", "Open", "After1Call", "Open", "After1Call"]
+
+        # Calculate spacing for super columns
+        spacing_per_regular_col = SelfPlayProcData.column_width()
+        super_col1_width = spacing_per_regular_col + len(regular_columns[1])
+        super_col2_width = spacing_per_regular_col + len(regular_columns[3])
+        super_col0_width = 5 * spacing_per_regular_col - super_col1_width - super_col2_width
+
+        # Print super columns
+        print("".center(super_col0_width), end="")
+        print(super_columns[0].center(super_col1_width), end="")
+        print(super_columns[1].center(super_col2_width), end="")
+        print()  # Newline at the end
+
+        # Print regular columns
+        for col in regular_columns:
+            print(f"{col:>{spacing_per_regular_col}}", end="")
+        print()  # Newline at the end
 
 
 class Manager:

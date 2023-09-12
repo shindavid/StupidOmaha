@@ -12,10 +12,18 @@
 
 class GameThread {
  public:
+  using count_submap_t = std::map<int, int>;
+  using count_map_t = std::map<int, count_submap_t>;
+
   GameThread(SharedData* shared_data, int thread_id)
       : shared_data_(shared_data), thread_id_(thread_id) {
+    std::random_device rd;
+    std::mt19937 g(rd());
+    prng_ = g;
+
     hands_.resize(n_players());
     callers_.resize(n_players());
+    callers_[n_players() - 1] = true;  // BB forced to call
     evaluator_ = pokerstove::PokerHandEvaluator::alloc("o");
 
     int n_remaining_cards = 52 - 4 * n_players();
@@ -38,9 +46,11 @@ class GameThread {
   int input_size() const { return shared_data_->input_size(); }
 
   int n_training_rows() const { return n_rows_; }
+  const count_map_t& call_counts() const { return call_counts_; }
+  const count_map_t& fold_counts() const { return fold_counts_; }
 
-  void launch() {
-    thread_ = new std::thread([&] { run(); });
+  void launch(bool verbose = false) {
+    thread_ = new std::thread([&] { run(verbose); });
   }
 
   void join() {
@@ -90,12 +100,26 @@ class GameThread {
   };
   using training_row_list_t = std::list<training_row_t>;
 
-  void run() {
+  int num_callers() const {
+    int n = 0;
+    for (int p = 0; p < n_players(); ++p) {
+      if (callers_[p]) {
+        n++;
+      }
+    }
+    return n;
+  }
+
+  void run(bool verbose) {
     init_hand();
+
+    std::vector<std::string> log;
+    char buf[1024];
 
     for (int seat = 0; seat < n_acting_players(); ++seat) {
       double predicted_ev =
           shared_data_->eval(thread_id_, seat, hands_[seat], callers_);
+      bool call = predicted_ev >= 0;
 
       // counterfactual sim
       callers_[seat] = true;
@@ -105,7 +129,16 @@ class GameThread {
         callers_[seat2] = predicted_ev2 >= 0;
       }
 
-      double counterfactual_ev = estimate_ev(seat);
+      estimate_evs();
+      double counterfactual_ev = evs_[seat];
+
+      if (verbose) {
+        std::string action_str = get_action_str(seat);
+        sprintf(buf, "%d %s %+5.3f %+5.3f %s %c", seat,
+                hands_[seat].str().c_str(), predicted_ev, counterfactual_ev,
+                action_str.c_str(), call ? 'C' : 'F');
+        log.push_back(buf);
+      }
 
       // undo counterfactual sim
       callers_[seat] = false;
@@ -114,8 +147,45 @@ class GameThread {
       }
 
       record_training_data(hands_[seat], seat, callers_, counterfactual_ev);
-      callers_[seat] = predicted_ev >= 0;
+      int num_previous_callers = num_callers() - 1;  // omit BB call
+      if (call) {
+        call_counts_[seat][num_previous_callers]++;
+      } else {
+        fold_counts_[seat][num_previous_callers]++;
+      }
+      callers_[seat] = call;
     }
+
+    if (verbose) {
+      int seat = n_players() - 1;
+      std::string action_str = get_action_str(seat);
+      sprintf(buf, "%d %s               %s C", seat, hands_[seat].str().c_str(),
+              action_str.c_str());
+      log.push_back(buf);
+
+      estimate_evs();
+      printf("\n");
+      for (int p = 0; p < n_players(); ++p) {
+        if (callers_[p]) {
+          printf("%s %+5.3f\n", log[p].c_str(), evs_[p]);
+        } else {
+          printf("%s\n", log[p].c_str());
+        }
+      }
+    }
+  }
+
+  std::string get_action_str(int seat) const {
+    char buf[16];
+    for (int p = 0; p < n_players(); ++p) {
+      if (p == seat) {
+        buf[p] = callers_[p] ? 'C' : 'F';
+      } else {
+        buf[p] = callers_[p] ? 'c' : 'f';
+      }
+    }
+    buf[n_players()] = '\0';
+    return std::string(buf);
   }
 
   void record_training_data(pokerstove::CardSet hand, int seat,
@@ -133,6 +203,7 @@ class GameThread {
       hands_[p] = deck_.deal(4);
       callers_[p] = false;
     }
+    callers_[n_players() - 1] = true;  // BB forced to call
   }
 
   pokerstove::CardSet deal() {
@@ -154,38 +225,51 @@ class GameThread {
     throw std::exception();
   }
 
-  int init_hand_distrs() {
-    int num_callers = 0;
+  void init_hand_distrs() {
     hand_dists_.clear();
+    evs_.clear();
     for (int p = 0; p < n_players(); ++p) {
       if (callers_[p]) {
-        num_callers++;
         hand_dists_.emplace_back(hands_[p]);
       }
+      evs_.push_back(0);
     }
-    return num_callers;
   }
 
-  double estimate_ev(int seat) {
-    int num_callers = init_hand_distrs();
+  void estimate_evs() {
+    init_hand_distrs();
+    int n_callers = num_callers();
 
-    if (num_callers < 2) {
-      return 0;  // no need to run out boards
+    if (n_callers < 2) {
+      return;  // no need to run out boards
     }
 
-    int caller_index = get_caller_index(seat);
+    // int caller_index = get_caller_index(seat);
 
-    double ev = 0;
+    // double ev = 0;
     for (int r = 0; r < n_runs(); ++r) {
       pokerstove::CardSet board = deal();
 
       pokerstove::ShowdownEnumerator showdown;
       auto results = showdown.calculateEquity(hand_dists_, board, evaluator_);
-      ev += results[caller_index].winShares + results[caller_index].tieShares;
+      for (int c = 0; c < n_callers; ++c) {
+        evs_[c] += results[c].winShares + results[c].tieShares;
+      }
     }
 
-    double pot_size = num_callers;
-    return ev * pot_size / n_runs() - 1;  // -1 for call
+    double pot_size = n_callers;
+    double mult = pot_size / n_runs();
+
+    // shift evs_ indexing
+    int c = n_callers - 1;
+    for (int p = n_players() - 1; p >= 0; --p) {
+      if (callers_[p]) {
+        evs_[p] = evs_[c] * mult - 1;  // - 1 for call
+        --c;
+      } else {
+        evs_[p] = 0;
+      }
+    }
   }
 
   SharedData* shared_data_;
@@ -194,10 +278,21 @@ class GameThread {
   pokerstove::SimpleDeck deck_;
   std::vector<pokerstove::CardSet> hands_;
   boost::shared_ptr<pokerstove::PokerHandEvaluator> evaluator_;
-
   std::vector<int> indices_;
-  std::vector<bool> callers_;
-  std::vector<pokerstove::CardDistribution> hand_dists_;
+
+  std::vector<bool> callers_;                             // reset on each hand
+  std::vector<pokerstove::CardDistribution> hand_dists_;  // reset on each hand
+  std::vector<double> evs_;
+
+  /*
+   * call_counts_[x][y] is the number of times seat x voluntarily called after y
+   * players voluntarily called in front of him.
+   *
+   * fold_counts_[x][y] is the number of times seat x folded after y players
+   * voluntarily called in front of him.
+   */
+  count_map_t call_counts_;
+  count_map_t fold_counts_;
 
   std::thread* thread_ = nullptr;
   training_row_list_t training_data_;

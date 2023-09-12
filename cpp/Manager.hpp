@@ -30,7 +30,7 @@ class Manager {
     while (infinite || remaining_hands > 0) {
       remaining_hands -= batch_size();
       for (GameThread* thread : game_threads_) {
-        thread->launch();
+        thread->launch(shared_data_.params().verbose);
       }
       for (GameThread* thread : game_threads_) {
         thread->join();
@@ -53,6 +53,48 @@ class Manager {
     }
 
     std::cout << "RESULT n_training_rows: " << n_training_rows << std::endl;
+
+    GameThread::count_map_t call_counts;
+    GameThread::count_map_t fold_counts;
+    for (GameThread* thread : game_threads_) {
+      for (const auto& call_count : thread->call_counts()) {
+        int seat = call_count.first;
+        for (const auto& submap : call_count.second) {
+          int hand = submap.first;
+          int count = submap.second;
+          call_counts[seat][hand] += count;
+        }
+      }
+      for (const auto& fold_count : thread->fold_counts()) {
+        int seat = fold_count.first;
+        for (const auto& submap : fold_count.second) {
+          int hand = submap.first;
+          int count = submap.second;
+          fold_counts[seat][hand] += count;
+        }
+      }
+    }
+
+    // dump call_counts:
+    for (const auto& call_count : call_counts) {
+      int seat = call_count.first;
+      for (const auto& submap : call_count.second) {
+        int n_prev_callers = submap.first;
+        int count = submap.second;
+        std::cout << "RESULT call-" << seat << "-" << n_prev_callers << ": "
+                  << count << std::endl;
+      }
+    }
+
+    for (const auto& fold_count : fold_counts) {
+      int seat = fold_count.first;
+      for (const auto& submap : fold_count.second) {
+        int n_prev_callers = submap.first;
+        int count = submap.second;
+        std::cout << "RESULT fold-" << seat << "-" << n_prev_callers << ": "
+                  << count << std::endl;
+      }
+    }
   }
 
  private:
