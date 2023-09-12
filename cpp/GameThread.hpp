@@ -21,12 +21,12 @@ class GameThread {
     std::mt19937 g(rd());
     prng_ = g;
 
-    hands_.resize(n_players());
+    hands_.resize(n_acting_players());
     callers_.resize(n_players());
     callers_[n_players() - 1] = true;  // BB forced to call
     evaluator_ = pokerstove::PokerHandEvaluator::alloc("o");
 
-    int n_remaining_cards = 52 - 4 * n_players();
+    int n_remaining_cards = 52 - 4 * n_acting_players();
     for (int i = 0; i < n_remaining_cards; ++i) {
       indices_.push_back(i);
     }
@@ -199,20 +199,26 @@ class GameThread {
 
   void init_hand() {
     deck_.shuffle();
-    for (int p = 0; p < n_players(); ++p) {
+    for (int p = 0; p < n_acting_players(); ++p) {
       hands_[p] = deck_.deal(4);
       callers_[p] = false;
     }
+    // BB hand to be dealt later in loop
     callers_[n_players() - 1] = true;  // BB forced to call
   }
 
-  pokerstove::CardSet deal() {
+  void deal() {
     std::shuffle(indices_.begin(), indices_.end(), prng_);
-    pokerstove::CardSet board;
+    board_.clear();
     for (int i = 0; i < 5; ++i) {
-      board |= deck_[indices_[i]];
+      board_ |= deck_[indices_[i]];
     }
-    return board;
+
+    pokerstove::CardSet bb;
+    for (int i = 5; i < 9; ++i) {
+      bb |= deck_[indices_[i]];
+    }
+    hand_dists_.back() = pokerstove::CardDistribution(bb);  // overwrites BB hand
   }
 
   int get_caller_index(int seat) const {
@@ -228,6 +234,8 @@ class GameThread {
   void init_hand_distrs() {
     hand_dists_.clear();
     evs_.clear();
+
+    // Note: BB is dealt here, but will be overwritten later
     for (int p = 0; p < n_players(); ++p) {
       if (callers_[p]) {
         hand_dists_.emplace_back(hands_[p]);
@@ -248,10 +256,10 @@ class GameThread {
 
     // double ev = 0;
     for (int r = 0; r < n_runs(); ++r) {
-      pokerstove::CardSet board = deal();
+      deal();
 
       pokerstove::ShowdownEnumerator showdown;
-      auto results = showdown.calculateEquity(hand_dists_, board, evaluator_);
+      auto results = showdown.calculateEquity(hand_dists_, board_, evaluator_);
       for (int c = 0; c < n_callers; ++c) {
         evs_[c] += results[c].winShares + results[c].tieShares;
       }
@@ -276,6 +284,7 @@ class GameThread {
   const int thread_id_;
   std::mt19937 prng_;
   pokerstove::SimpleDeck deck_;
+  pokerstove::CardSet board_;
   std::vector<pokerstove::CardSet> hands_;
   boost::shared_ptr<pokerstove::PokerHandEvaluator> evaluator_;
   std::vector<int> indices_;
