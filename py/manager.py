@@ -45,7 +45,7 @@ def input_repr(row):
         if pos_indices[k]:
             break
         action_str[k] = 'C' if call_indices[k] else 'F'
-    return cards_repr + ' ' + ''.join(action_str)
+    return ''.join(action_str) + ' ' + cards_repr
 
 
 def apply_mask(tensor: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
@@ -447,7 +447,8 @@ class Manager:
                         f'{n_total_positions} total positions{suffix}')
 
             stats = TrainingStats(net)
-            print_count = 5  # set to positive number to see print of example hands
+            print_count = 0  # set to positive number to see print of example hands
+            print_list = []
             for data in loader:
                 t1 = time.time()
                 inputs = data[0]
@@ -479,11 +480,15 @@ class Manager:
                 stats.update(results_list)
 
                 if print_count:
-                    i = inputs[0]
-                    o = labels_list[0][0]
-                    p = outputs_list[0][0]
-                    print('%s %+6.3f %+6.3f' % (input_repr(i), o, p))
-                    print_count -= 1
+                    for k in range(print_count):
+                        i = input_repr(inputs[k])
+                        p = float(outputs_list[0][k])
+                        tokens = i.split()
+                        print_list.append((tokens[0], -p, tokens[1]))
+                        print_count -= 1
+                    print_list.sort()
+                    for action_str, neg_ev, hand_str in print_list:
+                        print(f'{action_str} {hand_str} {-neg_ev:+6.3f}BB')
 
                 loss.backward()
                 optimizer.step()
